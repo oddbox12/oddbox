@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, Suspense } from "react";
+import { useState, useMemo, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import SiteHeader from "@/components/SiteHeader";
@@ -9,9 +9,13 @@ import CustomCursor from "@/components/CustomCursor";
 import GalleryLightbox from "@/components/GalleryLightbox";
 import { portfolioCategories } from "@/data/portfolio";
 import manifestJson from "@/asset-manifest.json";
+import { getThumbnailUrl, getLightboxUrl } from "@/lib/cloudinary";
+import { Loader2 } from "lucide-react";
 
 interface GalleryImageItem {
+  id?: string;
   url: string;
+  highResUrl?: string;
   filename: string;
   project: string;
   category: string;
@@ -24,6 +28,13 @@ function GalleryContent() {
   const [selectedCategory, setSelectedCategory] = useState<string>(initialCategory);
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
+  // Dynamic pagination state
+  const [dynamicItems, setDynamicItems] = useState<GalleryImageItem[]>([]);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [totalCount, setTotalCount] = useState(manifestJson.length);
+
   // Map categories for lookup
   const categoryMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -34,39 +45,126 @@ function GalleryContent() {
     return map;
   }, []);
 
-  // Filter images dynamically based on active category
-  const filteredImages = useMemo<GalleryImageItem[]>(() => {
-    if (selectedCategory === "all") {
-      return manifestJson.map((item) => ({
+  // Fetch paginated gallery items (16 items per page for fast initial load)
+  useEffect(() => {
+    let isMounted = true;
+    setLoading(true);
+    setPage(1);
+
+    const fetchCategoryItems = async () => {
+      try {
+        const res = await fetch(`/api/gallery?category=${selectedCategory}&page=1&limit=16&isPublished=true`);
+        const data = await res.json();
+
+        if (isMounted && data.items && data.items.length > 0) {
+          const formatted: GalleryImageItem[] = data.items.map((i: any) => ({
+            id: i.id,
+            url: getThumbnailUrl(i.imageUrl || `/images/${i.categoryId}/${i.filename}`),
+            highResUrl: getLightboxUrl(i.webUrl1800 || i.imageUrl || `/images/${i.categoryId}/${i.filename}`),
+            filename: i.filename,
+            project: i.projectName || i.title,
+            category: i.categoryId,
+            categoryLabel: i.categoryLabel || categoryMap.get(i.categoryId) || i.categoryId,
+          }));
+          setDynamicItems(formatted);
+          setHasMore(data.hasMore);
+          setTotalCount(data.total);
+          setLoading(false);
+          return;
+        }
+      } catch (err) {
+        console.warn("API gallery fetch fallback to manifest:", err);
+      }
+
+      // Fallback to local manifest
+      if (isMounted) {
+        let filtered = manifestJson;
+        if (selectedCategory !== "all") {
+          const currentCat = portfolioCategories.find((c) => c.id === selectedCategory);
+          const folder = currentCat ? currentCat.folder : selectedCategory;
+          filtered = manifestJson.filter((item) => item.category === folder);
+        }
+
+        const initialSlice = filtered.slice(0, 16).map((item) => ({
+          url: `/images/${item.category}/${item.filename}`,
+          highResUrl: item.web_url_1800 || `/images/${item.category}/${item.filename}`,
+          filename: item.filename,
+          project: item.project,
+          category: item.category,
+          categoryLabel: categoryMap.get(item.category) || item.category,
+        }));
+
+        setDynamicItems(initialSlice);
+        setHasMore(filtered.length > 16);
+        setTotalCount(filtered.length);
+        setLoading(false);
+      }
+    };
+
+    fetchCategoryItems();
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedCategory, categoryMap]);
+
+  // Load more handler
+  const handleLoadMore = async () => {
+    if (loading || !hasMore) return;
+    setLoading(true);
+    const nextPage = page + 1;
+
+    try {
+      const res = await fetch(`/api/gallery?category=${selectedCategory}&page=${nextPage}&limit=16&isPublished=true`);
+      const data = await res.json();
+
+      if (data.items && data.items.length > 0) {
+        const nextBatch: GalleryImageItem[] = data.items.map((i: any) => ({
+          id: i.id,
+          url: getThumbnailUrl(i.imageUrl || `/images/${i.categoryId}/${i.filename}`),
+          highResUrl: getLightboxUrl(i.webUrl1800 || i.imageUrl || `/images/${i.categoryId}/${i.filename}`),
+          filename: i.filename,
+          project: i.projectName || i.title,
+          category: i.categoryId,
+          categoryLabel: i.categoryLabel || categoryMap.get(i.categoryId) || i.categoryId,
+        }));
+
+        setDynamicItems((prev) => [...prev, ...nextBatch]);
+        setHasMore(data.hasMore);
+        setPage(nextPage);
+        setLoading(false);
+        return;
+      }
+    } catch {
+      // Fallback pagination
+      let filtered = manifestJson;
+      if (selectedCategory !== "all") {
+        const currentCat = portfolioCategories.find((c) => c.id === selectedCategory);
+        const folder = currentCat ? currentCat.folder : selectedCategory;
+        filtered = manifestJson.filter((item) => item.category === folder);
+      }
+
+      const nextSlice = filtered.slice(page * 16, (page + 1) * 16).map((item) => ({
         url: `/images/${item.category}/${item.filename}`,
+        highResUrl: item.web_url_1800 || `/images/${item.category}/${item.filename}`,
         filename: item.filename,
         project: item.project,
         category: item.category,
         categoryLabel: categoryMap.get(item.category) || item.category,
       }));
+
+      setDynamicItems((prev) => [...prev, ...nextSlice]);
+      setHasMore(filtered.length > (page + 1) * 16);
+      setPage(nextPage);
+      setLoading(false);
     }
-
-    const currentCat = portfolioCategories.find((c) => c.id === selectedCategory);
-    const folder = currentCat ? currentCat.folder : selectedCategory;
-
-    return manifestJson
-      .filter((item) => item.category === folder)
-      .map((item) => ({
-        url: `/images/${item.category}/${item.filename}`,
-        filename: item.filename,
-        project: item.project,
-        category: item.category,
-        categoryLabel: currentCat ? currentCat.label : item.category,
-      }));
-  }, [selectedCategory, categoryMap]);
+  };
 
   // Current active category details
   const activeCategoryObj = portfolioCategories.find((c) => c.id === selectedCategory);
-  const displayTitle = selectedCategory === "all" ? "ALL" : (activeCategoryObj ? activeCategoryObj.label : selectedCategory);
+  const displayTitle = selectedCategory === "all" ? "ALL" : activeCategoryObj ? activeCategoryObj.label : selectedCategory;
 
   const handleCategoryChange = (catId: string) => {
     setSelectedCategory(catId);
-    // Smoothly update URL query param without page reload
     if (typeof window !== "undefined") {
       const newUrl = catId === "all" ? "/work" : `/work?category=${catId}`;
       window.history.replaceState(null, "", newUrl);
@@ -75,7 +173,7 @@ function GalleryContent() {
 
   const allFilterTabs = [
     { id: "all", label: "All" },
-    ...portfolioCategories
+    ...portfolioCategories,
   ];
 
   return (
@@ -98,7 +196,7 @@ function GalleryContent() {
             </div>
             <div className="flex items-center gap-8 text-xs font-sans text-[#707070]">
               <span>Oddbox Studio Portfolio</span>
-              <span>{filteredImages.length} frames</span>
+              <span>{totalCount} frames</span>
             </div>
           </div>
 
@@ -124,16 +222,16 @@ function GalleryContent() {
 
           {/* Premium Masonry Grid with natural aspect ratios */}
           <div className="columns-1 sm:columns-2 lg:columns-3 gap-8 space-y-8 w-full [column-fill:_balance]">
-            {filteredImages.map((img, index) => {
+            {dynamicItems.map((img, index) => {
               return (
                 <motion.div
-                  key={`${img.category}-${img.filename}`}
+                  key={`${img.category}-${img.filename}-${index}`}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{
                     duration: 0.5,
                     delay: Math.min(index * 0.03, 0.3),
-                    ease: [0.16, 1, 0.3, 1]
+                    ease: [0.16, 1, 0.3, 1],
                   }}
                   onClick={() => setLightboxIndex(index)}
                   className="break-inside-avoid relative overflow-hidden bg-neutral-100 cursor-pointer custom-hover-area group rounded-sm shadow-sm transition-all duration-300 hover:shadow-md"
@@ -159,13 +257,37 @@ function GalleryContent() {
             })}
           </div>
 
+          {/* Load More Button for progressive pagination */}
+          {hasMore && (
+            <div className="text-center pt-16">
+              <button
+                onClick={handleLoadMore}
+                disabled={loading}
+                className="px-8 py-3.5 border border-[#111] text-[#111] text-xs font-sans tracking-[0.2em] uppercase hover:bg-[#111] hover:text-white transition-colors duration-300 disabled:opacity-50"
+              >
+                {loading ? (
+                  <span className="flex items-center space-x-2">
+                    <Loader2 size={13} className="animate-spin" />
+                    <span>Loading Moments...</span>
+                  </span>
+                ) : (
+                  <span>Load More Frames ({totalCount - dynamicItems.length} Remaining)</span>
+                )}
+              </button>
+            </div>
+          )}
+
         </div>
       </main>
 
-      {/* Fullscreen premium Lightbox */}
+      {/* Fullscreen premium Lightbox with high-resolution imagery */}
       {lightboxIndex !== null && (
         <GalleryLightbox
-          images={filteredImages}
+          images={dynamicItems.map((item) => ({
+            url: item.highResUrl || item.url,
+            project: item.project,
+            filename: item.filename,
+          }))}
           initialIndex={lightboxIndex}
           onClose={() => setLightboxIndex(null)}
         />

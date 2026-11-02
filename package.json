@@ -4,16 +4,25 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "cms:audit": "tsx scripts/audit-legacy-content.ts",
+    "cms:migrate:dry-run": "tsx scripts/migrate-legacy-content.ts --dry-run",
+    "cms:migrate": "tsx scripts/migrate-legacy-content.ts",
+    "cms:migrate:verify": "tsx scripts/verify-migration.ts"
   },
   "dependencies": {
+    "cloudinary": "^2.11.0",
+    "dotenv": "^18.0.9",
+    "firebase": "^13.1.0",
+    "firebase-admin": "^14.5.0",
     "framer-motion": "^13.1.1",
     "lucide-react": "^1.33.0",
     "next": "16.3.2",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "tsx": "^4.23.15"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

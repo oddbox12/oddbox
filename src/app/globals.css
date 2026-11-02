@@ -3,8 +3,8 @@
 :root {
   --background: #FAF9F5;
   --foreground: #111111;
-  --font-serif: var(--font-serif);
-  --font-sans: var(--font-sans);
+  --font-serif: 'Cormorant Garamond', Georgia, serif;
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
 }
 
 @theme inline {

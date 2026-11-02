@@ -1,17 +1,43 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { ArrowRight, ArrowUpRight } from "lucide-react";
 import SiteHeader from "@/components/SiteHeader";
 import SiteFooter from "@/components/SiteFooter";
 import CustomCursor from "@/components/CustomCursor";
-import { servicesData } from "@/data/services";
+import { servicesData as fallbackServices } from "@/data/services";
 import { siteConfig } from "@/data/site";
 
 export default function ServicesPage() {
   const [activeIndex, setActiveIndex] = useState(0);
+  const [services, setServices] = useState(fallbackServices);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const res = await fetch("/api/services");
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          const mapped = data
+            .filter((s) => s.isActive !== false)
+            .map((s) => ({
+              id: s.id,
+              num: s.number,
+              title: s.title,
+              categorySlug: s.categoryId || "commercial-photography",
+              description: s.shortDescription || s.description,
+              image: s.coverImageUrl || "/images/services/services-01.jpg",
+            }));
+          setServices(mapped);
+        }
+      } catch (err) {
+        // Fallback to static servicesData
+      }
+    }
+    load();
+  }, []);
 
   return (
     <>
@@ -66,7 +92,7 @@ export default function ServicesPage() {
 
           {/* ACTIVE INDICATOR DOTS */}
           <div className="flex justify-center items-center gap-2 mb-12">
-            {servicesData.map((_, idx) => (
+            {services.map((_, idx) => (
               <button
                 key={idx}
                 aria-label={`Select service ${idx + 1}`}
@@ -83,7 +109,7 @@ export default function ServicesPage() {
           {/* MINIMAL PREMIUM SERVICES CARDS GRID (3 CARDS PER LINE) */}
           <section className="mb-24">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 lg:gap-10">
-              {servicesData.map((service, idx) => {
+              {services.map((service, idx) => {
                 const isActive = activeIndex === idx;
                 return (
                   <motion.div
@@ -180,4 +206,3 @@ export default function ServicesPage() {
     </>
   );
 }
-

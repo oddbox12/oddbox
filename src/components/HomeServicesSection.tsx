@@ -1,13 +1,40 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
 import { siteConfig } from "@/data/site";
-import { servicesData } from "@/data/services";
+import { servicesData as fallbackServices } from "@/data/services";
 import { motion, AnimatePresence } from "framer-motion";
 
 export default function HomeServicesSection() {
-  const [activeImage, setActiveImage] = useState(servicesData[0].image);
+  const [services, setServices] = useState(fallbackServices);
+  const [activeImage, setActiveImage] = useState(fallbackServices[0]?.image || "/images/services/services-01.jpg");
+
+  useEffect(() => {
+    async function loadServices() {
+      try {
+        const res = await fetch("/api/services");
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          const mapped = data
+            .filter((s: any) => s.isActive !== false)
+            .map((s: any) => ({
+              id: s.id,
+              num: s.number,
+              title: s.title,
+              categorySlug: s.categoryId || "corporate",
+              description: s.shortDescription || s.description,
+              image: s.coverImageUrl || "/images/services/services-01.jpg",
+            }));
+          setServices(mapped);
+          if (mapped[0]) setActiveImage(mapped[0].image);
+        }
+      } catch (err) {
+        // Fallback to static services
+      }
+    }
+    loadServices();
+  }, []);
 
   return (
     <section className="w-full bg-[#FAF9F5] py-16 px-6 md:py-24 md:px-16 border-t border-[#E6E4DD]">
@@ -23,7 +50,7 @@ export default function HomeServicesSection() {
           </h2>
 
           <div className="flex flex-col">
-            {servicesData.map((service) => (
+            {services.map((service) => (
               <div
                 key={service.id}
                 onMouseEnter={() => setActiveImage(service.image)}
@@ -60,9 +87,9 @@ export default function HomeServicesSection() {
               className="relative w-full h-full"
             >
               <img
-                src={`${activeImage}?v=2`}
-                alt="Service Preview"
-                className="absolute inset-0 w-full h-full object-cover"
+                src={activeImage}
+                alt="Service Representation"
+                className="w-full h-full object-cover"
               />
             </motion.div>
           </AnimatePresence>
